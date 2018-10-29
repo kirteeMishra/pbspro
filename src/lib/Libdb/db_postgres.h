@@ -95,6 +95,7 @@ extern "C" {
 #define STMT_DELETE_JOBSCR  "delete_jobscr"
 
 #define STMT_SELECT_JOBATTR "select_jobattr"
+#define STMT_SELECT_JOBATTR_SPECIFIC "select_jobattr_specific"
 #define STMT_INSERT_JOBATTR "insert_jobattr"
 #define STMT_UPDATE_JOBATTR "update_jobattr"
 #define STMT_UPDATE_JOBATTR_RESC "update_jobattr_resc"

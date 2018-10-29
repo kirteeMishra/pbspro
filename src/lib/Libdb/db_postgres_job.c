@@ -188,6 +188,15 @@ pg_db_prepare_job_sqls(pbs_db_conn_t *conn)
 	if (pg_prepare_stmt(conn, STMT_SELECT_JOBATTR, conn->conn_sql, 1) != 0)
 		return -1;
 
+	sprintf(conn->conn_sql, "select "
+		"attr_name, attr_resource, attr_value, attr_flags "
+		"from pbs.job_attr "
+		"where ji_jobid = $1 "
+		"and attr_name = $2");
+	if (pg_prepare_stmt(conn, STMT_SELECT_JOBATTR_SPECIFIC, conn->conn_sql, 2) != 0)
+		return -1;
+
+
 	/*
 	 * Use the sql encode function to encode the $2 parameter. Encode using
 	 * 'escape' mode. Encode considers $2 as a bytea and returns a escaped

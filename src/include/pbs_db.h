@@ -290,6 +290,9 @@ struct pbs_db_jobscr_info {
 };
 typedef struct pbs_db_jobscr_info pbs_db_jobscr_info_t;
 
+/* attribute query flags */
+#define PBS_DB_SINGLE_ATTR_FETCH     1
+
 /**
  * @brief
  *  Structure used to pass database query options to database functions

@@ -294,6 +294,8 @@ recov_attr_db(pbs_db_conn_t *conn,
 	void	 *state = NULL;
 	pbs_db_obj_info_t obj;
 	void **palarray = NULL;
+	pbs_db_query_options_t queryopt;
+    int attr_index;
 
 	if ((palarray = calloc(limit, sizeof(void *))) == NULL) {
 		log_err(-1,__func__, "Out of memory");
@@ -309,7 +311,16 @@ recov_attr_db(pbs_db_conn_t *conn,
 	/* For each attribute, read in the attr_extern header */
 	obj.pbs_db_obj_type = PBS_DB_ATTR;
 	obj.pbs_db_un.pbs_db_attr = p_attr_info;
-	state = pbs_db_cursor_init(conn, &obj, NULL);
+	queryopt.flags = 0;
+
+	if(!strcmp(p_attr_info->attr_name, ATTR_v)) //Need to check if we can use generic checking here
+	{
+		queryopt.flags = PBS_DB_SINGLE_ATTR_FETCH; //Prepare the queryopt struct to indicate attribute retreival
+		state = pbs_db_cursor_init(conn, &obj, &queryopt);
+	}
+	else{
+	    state = pbs_db_cursor_init(conn, &obj, NULL);
+	}
 	if (!state) {
 		free(palarray);
 		return -1;
@@ -365,7 +376,7 @@ recov_attr_db(pbs_db_conn_t *conn,
 		pal->al_refct = 1;	/* ref count reset to 1 */
 
 		/* find the attribute definition based on the name */
-		index = find_attr(padef, pal->al_name, limit);
+		index = find_attr(padef, pal->al_name, JOB_ATR_LAST);
 		if (index < 0) {
 
 			/*
@@ -387,10 +398,15 @@ recov_attr_db(pbs_db_conn_t *conn,
 				continue;
 			}
 		}
+		if(limit == 1)
+		{
+		   attr_index = index;
+		   index = 0;
+		}
 		if (palarray[index] == NULL)
 			palarray[index] = pal;
 		else {
-			tmp_pal = palarray[index];
+		    tmp_pal = palarray[index];
 			while (tmp_pal->al_sister)
 				tmp_pal = tmp_pal->al_sister;
 
@@ -433,32 +449,36 @@ recov_attr_db(pbs_db_conn_t *conn,
 		 * the flag has ATR_VFLAG_SET
 		 *
 		 */
+		if(limit != 1)
+		{
+		  attr_index = index;
+		}
 		pal = palarray[index];
 		while (pal) {
-			if (((padef + index)->at_type == ATR_TYPE_ENTITY) &&
+			if (((padef + attr_index)->at_type == ATR_TYPE_ENTITY) &&
 				((pattr + index)->at_flags & ATR_VFLAG_SET)) {
 				attribute tmpa;
 				memset(&tmpa, 0, sizeof(attribute));
 				/* for INCR case of entity limit, decode locally */
-				if ((padef+index)->at_decode) {
-					(void)(padef+index)->at_decode(&tmpa,
+				if ((padef+attr_index)->at_decode) {
+					(void)(padef+attr_index)->at_decode(&tmpa,
 						pal->al_name,
 						pal->al_resc,
 						pal->al_value);
-					(void)(padef+index)->at_set(pattr+index,
+					(void)(padef+attr_index)->at_set(pattr+index,
 						&tmpa,
 						INCR);
-					(void)(padef+index)->at_free(&tmpa);
+					(void)(padef+attr_index)->at_free(&tmpa);
 				}
 			} else {
-				if ((padef+index)->at_decode) {
-					(void)(padef+index)->at_decode(pattr+index,
+				if ((padef+attr_index)->at_decode) {
+					(void)(padef+attr_index)->at_decode(pattr+index,
 						pal->al_name,
 						pal->al_resc,
 						pal->al_value);
-					if ((padef+index)->at_action)
+					if ((padef+attr_index)->at_action)
 						(void)(padef+index)->at_action(
-							pattr+index, parent,
+							pattr+attr_index, parent,
 							ATR_ACTION_RECOV);
 				}
 			}

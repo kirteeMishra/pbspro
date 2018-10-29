@@ -472,12 +472,17 @@ pg_db_find_attr(pbs_db_conn_t *conn, void* st,
 	pg_query_state_t *state = (pg_query_state_t *) st;
 	pbs_db_attr_info_t *pattr = info->pbs_db_un.pbs_db_attr;
 	int rc;
+	int numVars = 1;
 
 	if (!state)
 		return -1;
 
-	if (pattr->parent_obj_type == PARENT_TYPE_JOB)
-		strcpy(conn->conn_sql, STMT_SELECT_JOBATTR);
+	if (pattr->parent_obj_type == PARENT_TYPE_JOB) {
+		if (opts && opts->flags == PBS_DB_SINGLE_ATTR_FETCH)
+			strcpy(conn->conn_sql, STMT_SELECT_JOBATTR_SPECIFIC);
+		else
+			strcpy(conn->conn_sql, STMT_SELECT_JOBATTR);
+	}
 	else if (pattr->parent_obj_type == PARENT_TYPE_SERVER)
 		strcpy(conn->conn_sql, STMT_SELECT_SVRATTR);
 	else if (pattr->parent_obj_type == PARENT_TYPE_QUE_ALL)
@@ -490,7 +495,13 @@ pg_db_find_attr(pbs_db_conn_t *conn, void* st,
 		strcpy(conn->conn_sql, STMT_SELECT_SCHEDATTR);
 
 	LOAD_STR(conn, pattr->parent_id, 0);
-	if ((rc = pg_db_query(conn, conn->conn_sql, 1, &res)) != 0)
+	if(opts && opts->flags == PBS_DB_SINGLE_ATTR_FETCH)
+	{
+      numVars = 2;
+	  LOAD_STR(conn, pattr->attr_name, 1);
+	}
+
+	if ((rc = pg_db_query(conn, conn->conn_sql, numVars, &res)) != 0)
 		return rc;
 
 	state->row = 0;

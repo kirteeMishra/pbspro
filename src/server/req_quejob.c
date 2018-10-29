@@ -2421,6 +2421,9 @@ req_commit(struct batch_request *preq)
 		return;
 	}
 
+	/* the job is saved to the db, now free the variable list attributes if any */
+	job_attr_def[JOB_ATR_variables].at_free(&pj->ji_wattr[JOB_ATR_variables]);
+
 	strcpy(jobscr.ji_jobid, pj->ji_qs.ji_jobid);
 	jobscr.script = pj->ji_script;
 	obj.pbs_db_obj_type = PBS_DB_JOBSCR;

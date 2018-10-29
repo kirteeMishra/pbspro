@@ -1041,6 +1041,29 @@ svr_strtjob2(job *pjob, struct batch_request *preq)
 			(ATR_VFLAG_SET | ATR_VFLAG_MODCACHE);
 	}
 
+	/* before sending the job to MOM, retrieve the Variable List attribute from db */
+    //pbs_db_job_info_t dbjob;
+	pbs_db_attr_info_t attr_info;
+	pbs_db_obj_info_t attr_obj;
+	pbs_db_conn_t *conn = svr_db_conn;
+
+	attr_info.parent_id = pjob->ji_qs.ji_jobid;
+	attr_info.parent_obj_type = PARENT_TYPE_JOB;
+	//take the name of variable list attribute
+	strcpy(attr_info.attr_name, ATTR_v);
+
+	if(recov_attr_db(conn, pjob, &attr_info, job_attr_def, &(pjob->ji_wattr[JOB_ATR_variables]),
+	1, (int)JOB_ATR_UNKN) != 0){
+		log_event(PBSEVENT_JOB, PBS_EVENTCLASS_JOB, LOG_NOTICE,
+			pjob->ji_qs.ji_jobid,
+			"Kirtee:Unable to Retrieve the env variable list attribute");
+			//Need to check what all needs to be released as part of failure.
+	}
+
+	log_event(PBSEVENT_JOB, PBS_EVENTCLASS_JOB, LOG_NOTICE,
+			pjob->ji_qs.ji_jobid,
+			"Kirtee:Got the env variable list attribute from db");
+
 	/* send the job to MOM */
 	set_attr_svr(&(pjob->ji_wattr[(int) JOB_ATR_Comment]), &job_attr_def[(int) JOB_ATR_Comment],
 		form_attr_comment("Job was sent for execution at %s", pjob->ji_wattr[(int) JOB_ATR_exec_vnode].at_val.at_str));
