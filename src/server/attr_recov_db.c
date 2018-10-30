@@ -603,3 +603,206 @@ delete_attr_db(pbs_db_conn_t *conn,
 
 	return (pbs_db_delete_obj(conn, &obj));
 }
+
+/**
+ * @brief
+ *	Recover specific attribute from the database
+ *
+ * @param[in]	conn - Database connection handle
+ * @param[in]	parent - Address of parent object
+ * @param[in]	p_attr_info - Information about the database parent
+ * @param[in]	padef - Address of parent's attribute definition array
+ * @param[in]	pattr - Address of the parent objects attribute array
+ * @param[in]   unknown - The index of the unknown attribute if any
+ *
+ * @return      Error code
+ * @retval	 0  - Success
+ * @retval	-1  - Failure
+ */
+int
+recov_spec_attr_db(pbs_db_conn_t *conn,
+	void *parent,
+	pbs_db_attr_info_t *p_attr_info,
+	struct attribute_def *padef,
+	struct attribute *pattr,
+	int unknown
+	)
+{
+	int	  amt;
+	int	  index;
+	svrattrl *pal = NULL;
+	svrattrl *tmp_pal = NULL;
+	int	  ret = 0;
+	void	 *state = NULL;
+	pbs_db_obj_info_t obj;
+	void **palarray = NULL;
+	pbs_db_query_options_t queryopt;
+    int attr_index;
+	int limit = 1;
+
+	if ((palarray = calloc(limit, sizeof(void *))) == NULL) {
+		log_err(-1,__func__, "Out of memory");
+		return -1;
+	}
+
+	/* set all privileges (read and write) for decoding resource	*/
+	/* This is a special (kludge) flag for the recovery case, see	*/
+	/* decode_resc() in lib/Libattr/attr_fn_resc.c			*/
+
+	resc_access_perm = ATR_DFLAG_ACCESS;
+
+	/* read in the attr_extern header */
+	obj.pbs_db_obj_type = PBS_DB_ATTR;
+	obj.pbs_db_un.pbs_db_attr = p_attr_info;
+	queryopt.flags = PBS_DB_SINGLE_ATTR_FETCH; //Prepare the queryopt struct to indicate attribute retreival
+
+	state = pbs_db_cursor_init(conn, &obj, &queryopt);
+
+	if (!state) {
+	  free(palarray);
+	  return -1;
+	}
+
+	/* Below ensures that a server or queue resource is not set */
+	/* if that resource is not known to the current server. */
+	if ( (p_attr_info->attr_resc != NULL) && \
+	   (strlen(p_attr_info->attr_resc) > 0) && \
+	   ((padef == svr_attr_def) || (padef == que_attr_def)) )
+	{
+	  resource_def	*prdef;
+
+	  prdef = find_resc_def(svr_resc_def,
+	  p_attr_info->attr_resc, svr_resc_size);
+	  if (prdef == NULL) {
+		snprintf(log_buffer, sizeof(log_buffer),
+		"%s's unknown resource \"%s.%s\" ignored",
+		((padef == svr_attr_def)?"server":"queue"),
+		p_attr_info->attr_name,
+		p_attr_info->attr_resc);
+		log_err(-1,__func__, log_buffer);
+	  }
+	}
+
+	pal = make_attr(p_attr_info->attr_name,
+	        p_attr_info->attr_resc,
+	        p_attr_info->attr_value,
+	        p_attr_info->attr_flags);
+
+	/* Return when make_attr fails to create a svrattrl structure */
+	if (pal == NULL) {
+	  log_err(-1,__func__, "Out of memory");
+	  free(palarray);
+	  return -1;
+	}
+
+	amt = pal->al_tsize - sizeof(svrattrl);
+	if (amt < 1) {
+	  sprintf(log_buffer, "Invalid attr list size in DB");
+	  log_err(-1,__func__, log_buffer);
+	  (void)free(pal);
+	  ret = -1;
+	 // goto closeConn;
+	}
+	CLEAR_LINK(pal->al_link);
+
+	pal->al_refct = 1;	/* ref count reset to 1 */
+
+	/* find the attribute definition based on the name */
+	index = find_attr(padef, pal->al_name, JOB_ATR_LAST);
+	if (index < 0)
+	{
+	  /*
+	  * There are two ways this could happen:
+	  * 1. if the (job) attribute is in the "unknown" list -
+	  *    keep it there;
+	  * 2. if the server was rebuilt and an attribute was
+	  *    deleted, -  the fact is logged and the attribute
+	  *    is discarded (system,queue) or kept (job)
+	  */
+	  if (unknown > 0) {
+	    index = unknown;
+	  } else {
+		sprintf(log_buffer,
+		  "unknown attribute \"%s\" discarded",
+		  pal->al_name);
+		  log_err(-1,__func__, log_buffer);
+		  (void)free(pal);
+	  }
+    }
+
+    attr_index = index;
+	index = 0;
+
+	if (palarray[index] == NULL)
+	  palarray[index] = pal;
+	else {
+	  tmp_pal = palarray[index];
+	  while (tmp_pal->al_sister)
+	    tmp_pal = tmp_pal->al_sister;
+
+	  /* this is the end of the list of attributes */
+	  tmp_pal->al_sister = pal;
+    }
+
+//closeConn:
+	pbs_db_cursor_close(conn, state);
+
+	if (ret == -1) {
+	  /*
+	  * some error happened above
+	  * Error has already been logged
+	  * so just free palarray indexes and return
+	  */
+	  for (index = 0; index < limit; index++)
+	    if (palarray[index])
+		  free(palarray[index]);
+	  free(palarray);
+	  return -1;
+	}
+
+	/* now do the decoding */
+
+	pal = palarray[index];
+	while (pal)
+	{
+	  if (((padef + attr_index)->at_type == ATR_TYPE_ENTITY) &&
+			((pattr + index)->at_flags & ATR_VFLAG_SET))
+	  {
+	    attribute tmpa;
+	    memset(&tmpa, 0, sizeof(attribute));
+	    /* for INCR case of entity limit, decode locally */
+        if ((padef+attr_index)->at_decode) {
+	      (void)(padef+attr_index)->at_decode(&tmpa,
+				pal->al_name,
+				pal->al_resc,
+				pal->al_value);
+		  (void)(padef+attr_index)->at_set(pattr+index,
+				&tmpa,
+				INCR);
+		  (void)(padef+attr_index)->at_free(&tmpa);
+		}
+	  }
+	  else
+	  {
+	    if ((padef+attr_index)->at_decode) {
+		  (void)(padef+attr_index)->at_decode(pattr+index,
+		         pal->al_name,
+				 pal->al_resc,
+				 pal->al_value);
+		  if ((padef+attr_index)->at_action)
+		      (void)(padef+index)->at_action(
+			  pattr+attr_index, parent,
+			  ATR_ACTION_RECOV);
+	    }
+	  }
+	  (pattr+index)->at_flags = pal->al_flags & ~ATR_VFLAG_MODIFY;
+
+	  tmp_pal = pal->al_sister;
+	  (void)free(pal);
+	  pal = tmp_pal;
+    }
+
+  (void)free(palarray);
+
+  return (0);
+}

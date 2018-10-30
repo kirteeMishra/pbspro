@@ -138,6 +138,7 @@ extern int direct_write_requested(job *pjob);
 extern void spool_filename(job *pjob, char *namebuf, char *suffix);
 extern enum failover_state are_we_primary(void);
 extern void license_more_nodes(void);
+extern int recov_spec_attr_db(pbs_db_conn_t *, void *, pbs_db_attr_info_t *, struct attribute_def *, struct attribute *, int);
 
 #ifdef	_PROVISION_H
 extern int find_prov_vnode_list(job *pjob, exec_vnode_listtype *prov_vnodes, char **aoe_name);
